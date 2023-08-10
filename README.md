@@ -95,16 +95,22 @@ FINAL WORKABLE OUTPUT FILES: Rooted (_deblur-rooted-tree.qza) and unrooted (_deb
 
 FINAL WORKABLE OUTPUT FILES: Taxonomy file (_kraken2_taxids_lineage_formatted_colnames.txt)
 
-Deblur feature table, rooted phylogenetic tree, and taxonomy file were imported into R for further processing and analysis: see Tick16S_Analysis_Pipeline_20230810.Rmd file.
+Deblur feature table, rooted phylogenetic tree, and taxonomy file were imported into R for further processing and analysis: see Tick16S_Analysis_Pipeline RMD files.
+
+Examples of figures generated using code from the RMarkdown files, along with EvolView and Cytoscape:
 
 
 
+![AllSamples_BarPlot](https://github.com/sroitman/Tick-Microbiome-Roitman-et-al/assets/35745864/111d1b8d-b78b-48f7-a5fb-21e92be39569)
+
+![AllSamples_EvolView_Dendrogram](https://github.com/sroitman/Tick-Microbiome-Roitman-et-al/assets/35745864/464b0656-1929-4986-a034-52a4a6c0c975)
+
+
+![AllSamples_AlphaDiversity](https://github.com/sroitman/Tick-Microbiome-Roitman-et-al/assets/35745864/53d640de-acd2-403c-9c4c-b26f5108eb3b)
 
 
 
-
-
-
+![MASamples_DESeq2](https://github.com/sroitman/Tick-Microbiome-Roitman-et-al/assets/35745864/7eba6763-1adf-4876-bf6f-59c86c1b925b)
 
 
 
