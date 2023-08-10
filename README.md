@@ -2,7 +2,7 @@
 - Description of pipelines and scripts used for analyzing 16S microbiome data sequenced from *Ixodes scapularis* samples.
 - The scripts described here were run on an SGE / Grid Engine via qsub.
 - All required software was installed using conda under various environments.
-- Scripts in the R Markdown file (Tick16S_Analysis_Pipeline_20230810.Rmd) were run on RStudio v. 022.12.0+353 and R v. 4.1.1
+- Scripts in the R Markdown files (Tick16S_Analysis_Pipeline_AllSamples_20230810.Rmd, Tick16S_Analysis_Pipeline_MASamples_20230810.Rmd, Tick16S_Analysis_Pipeline_NHSamples_20230810.Rmd) were run on RStudio v. 022.12.0+353 and R v. 4.1.1
 
 
 ## Authors:
