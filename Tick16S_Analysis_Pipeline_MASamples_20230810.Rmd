@@ -1,0 +1,854 @@
+---
+title: "Tick16S_Analysis_Pipeline_MASamples_20230810"
+author: "Sofia Roitman"
+date: "2023-08-10"
+output: html_document
+---
+
+# Set working directory
+```{r}
+setwd("/path/to/wd")
+```
+
+
+# Load dependencies
+```{r message=FALSE, error=FALSE}
+# libraries and functions
+library(tidyverse)
+library(RVAideMemoire)
+library(vegan)
+library(BiocManager)
+library(phyloseq) 
+library(rhdf5)
+library(biomformat)
+library(microbiome)
+library(dplyr) 
+library(gcookbook)
+library(tidyverse)
+library(ape)
+library(Biostrings) 
+library(Hmisc) 
+library(yaml) 
+library(tidyr) 
+library(stats) 
+library(utils) 
+library(qiime2R)
+library(genefilter)
+library(magrittr)
+library(DESeq2)
+library(plyr)
+library(data.table)
+library(phytools)
+library(stringi)
+library(ggpubr)
+library(vegan)
+library(microbiomeSeq)
+library(microbiomeutilities)
+library(ampvis2)
+library(pairwiseAdonis)
+library(ecole)
+library(paletteer)
+library(mirlyn)
+library(ggtree)
+library(ggplot2)
+library(scales)
+library(microbiomeViz)
+library(miaViz)
+library(scater)
+library(mia)
+library(mina)
+library(NetCoMi)
+library(Matrix)
+library(igraph)
+
+```
+
+# Import starting phyloseq object
+```{r}
+readRDS(file = "physeq_debkno0_taxfix.rds")
+```
+
+
+# SUBSETTING
+
+# MA
+```{r}
+ma_subset = subset_samples(physeq_debKno0_taxfix, collection_method == "flag")
+ma <- prune_taxa(taxa_sums(ma_subset) >= 1, ma_subset)
+```
+
+## By sex
+```{r}
+
+maf = subset_samples(ma, sex == "F")
+mam = subset_samples(ma, sex == "M")
+
+maf_prune <- prune_taxa(taxa_sums(maf) > 1, maf)
+maf_prune_rel  = transform_sample_counts(maf_prune, function(x) x / sum(x) )
+
+
+```
+
+### Female only, individual diseases, no coinfections
+```{r}
+maf_lyme_nocoinf = subset_samples(maf_prune, bm_babesiosis_noPN == "NN" & aph_anaplasmosis_noPN == "NN")
+maf_lyme_nocoinf_prune <- prune_taxa(taxa_sums(maf_lyme_nocoinf) > 1, maf_lyme_nocoinf)
+maf_lyme_nocoinf_prune_rel  = transform_sample_counts(maf_lyme_nocoinf_prune, function(x) x / sum(x) )
+
+maf_bab_nocoinf = subset_samples(maf_prune, bb_lyme_noPN == "NN" & aph_anaplasmosis_noPN == "NN")
+maf_bab_nocoinf_prune <- prune_taxa(taxa_sums(maf_bab_nocoinf) > 1, maf_bab_nocoinf)
+
+maf_ana_nocoinf = subset_samples(maf_prune, bb_lyme_noPN == "NN" & bm_babesiosis_noPN == "NN")
+maf_ana_nocoinf_prune <- prune_taxa(taxa_sums(maf_ana_nocoinf) > 1, maf_ana_nocoinf)
+```
+
+## NN across all diseases
+```{r}
+
+mann = subset_samples(ma, bb_lyme_noPN == "NN" & bm_babesiosis_noPN == "NN" & aph_anaplasmosis_noPN == "NN")
+
+```
+
+## No Rickettsia
+```{r}
+
+manorick = subset_taxa(ma, Genus!="Rickettsia")
+
+```
+
+
+## LYME MA
+```{r}
+# Lyme PP no PN
+malymeppnoPN = subset_samples(ma, bb_lyme_noPN == "PP")
+## Lyme PP ONLY
+malymepponlynoPN = subset_samples(malymeppnoPN, bm_babesiosis_noPN == "NN" & aph_anaplasmosis_noPN == "NN")
+## Lyme PP, Babesiosis PP
+malymebabppnoPN = subset_samples(malymeppnoPN, bm_babesiosis_noPN == "PP" & aph_anaplasmosis_noPN == "NN")
+## Lyme PP, Anaplasmosis PP
+malymeanappnoPN = subset_samples(malymeppnoPN, bm_babesiosis_noPN == "NN" & aph_anaplasmosis_noPN == "PP")
+## Lyme PP, Babesiosis PP, Anaplasmosis PP
+malymebabanappnoPN = subset_samples(malymeppnoPN, bm_babesiosis_noPN == "PP" & aph_anaplasmosis_noPN == "PP")
+
+
+# Lyme NN
+malymenn = subset_samples(ma, bb_lyme_noPN == "NN")
+## Lyme PP and NN ONLY
+malymeppnnonly = subset_samples(ma, bm_babesiosis_noPN == "NN" & aph_anaplasmosis_noPN == "NN")
+
+```
+
+## BABESIOSIS MA
+```{r}
+# Babesiosis PP no PN
+mababppnoPN = subset_samples(ma, bm_babesiosis_noPN == "PP")
+## Babesiosis PP ONLY
+mababpponlynoPN = subset_samples(mababppnoPN, bb_lyme_noPN == "NN" & aph_anaplasmosis_noPN == "NN")
+## Babesiosis PP, Anaplasmosis PP
+#babanapp = subset_samples(mababppnoPN, bb_lyme_noPN == "NN" & aph_anaplasmosis_noPN == "PP")
+#### No co-occurrence of babesiosis and anaplasmosis!
+
+# Babesiosis NN
+mababnn = subset_samples(ma, bm_babesiosis_noPN == "NN")
+## Babesiosis PP and NN ONLY
+mababppnnonly = subset_samples(ma, bb_lyme_noPN == "NN" & aph_anaplasmosis_noPN == "NN")
+
+```
+
+## ANAPLASMOSIS
+```{r}
+# Anaplasmosis PP no PN
+maanappnoPN = subset_samples(ma, aph_anaplasmosis_noPN == "PP")
+## Anaplasmosis PP ONLY
+maanapponlynoPN = subset_samples(maanappnoPN, bb_lyme_noPN == "NN" & bm_babesiosis_noPN == "NN")
+
+
+# Anaplasmosis NN
+maanann = subset_samples(ma, aph_anaplasmosis_noPN == "NN")
+## Anaplasmosis PP and NN ONLY
+maanappnnonly = subset_samples(ma, bb_lyme_noPN == "NN" & bm_babesiosis_noPN == "NN")
+
+```
+
+# DISTANCE MATRICES
+## Bray Curtis and Unweighted Unifrac
+
+### Basic unsubsetted dataset
+```{r}
+# All
+bray_ma <- phyloseq::distance(ma, "bray")
+uuni_ma <- phyloseq::distance(ma, "uUniFrac")
+wuni_ma <- phyloseq::distance(ma, "wUniFrac")
+
+```
+
+## NN across all diseases
+```{r}
+
+bray_mann <- phyloseq::distance(mann, "bray")
+uuni_mann <- phyloseq::distance(mann, "uUniFrac")
+wuni_mann <- phyloseq::distance(mann, "wUniFrac")
+
+```
+
+## No Rickettsia
+```{r}
+
+bray_manorick <- phyloseq::distance(manorick, "bray")
+uuni_manorick <- phyloseq::distance(manorick, "uUniFrac")
+wuni_manorick <- phyloseq::distance(manorick, "wUniFrac")
+
+```
+
+
+### Sex
+```{r}
+bray_maf_prune <- phyloseq::distance(maf_prune, "bray")
+uuni_maf_prune <- phyloseq::distance(maf_prune, "uUniFrac")
+wuni_maf_prune <- phyloseq::distance(maf_prune, "wUniFrac")
+
+bray_maf_lyme_nocoinf_prune <- phyloseq::distance(maf_lyme_nocoinf_prune, "bray")
+uuni_maf_lyme_nocoinf_prune <- phyloseq::distance(maf_lyme_nocoinf_prune, "uUniFrac")
+wuni_maf_lyme_nocoinf_prune <- phyloseq::distance(maf_lyme_nocoinf_prune, "wUniFrac")
+
+# Field
+bray_mam <- phyloseq::distance(mam, "bray")
+uuni_mam <- phyloseq::distance(mam, "uUniFrac")
+wuni_mam <- phyloseq::distance(mam, "wUniFrac")
+```
+
+#### Female, individual diseases, no coinfections
+```{r}
+bray_maf_lyme_nocoinf_prune <- phyloseq::distance(maf_lyme_nocoinf_prune, "bray")
+uuni_maf_lyme_nocoinf_prune <- phyloseq::distance(maf_lyme_nocoinf_prune, "uUniFrac")
+wuni_maf_lyme_nocoinf_prune <- phyloseq::distance(maf_lyme_nocoinf_prune, "wUniFrac")
+
+bray_maf_bab_nocoinf_prune <- phyloseq::distance(maf_bab_nocoinf_prune, "bray")
+uuni_maf_bab_nocoinf_prune <- phyloseq::distance(maf_bab_nocoinf_prune, "uUniFrac")
+wuni_maf_bab_nocoinf_prune <- phyloseq::distance(maf_bab_nocoinf_prune, "wUniFrac")
+
+bray_maf_ana_nocoinf_prune <- phyloseq::distance(maf_ana_nocoinf_prune, "bray")
+uuni_maf_ana_nocoinf_prune <- phyloseq::distance(maf_ana_nocoinf_prune, "uUniFrac")
+wuni_maf_ana_nocoinf_prune <- phyloseq::distance(maf_ana_nocoinf_prune, "wUniFrac")
+```
+
+
+### Lyme
+```{r}
+# Lyme PP noPN
+bray_malymepp_noPN <- phyloseq::distance(malymeppnoPN, "bray")
+uuni_malymepp_noPN <- phyloseq::distance(malymeppnoPN, "uUniFrac")
+wuni_malymepp_noPN <- phyloseq::distance(malymeppnoPN, "wUniFrac")
+## Lyme PP ONLY
+bray_malymepponly_noPN <- phyloseq::distance(malymepponlynoPN, "bray")
+uuni_malymepponly_noPN <- phyloseq::distance(malymepponlynoPN, "uUniFrac")
+wuni_malymepponly_noPN <- phyloseq::distance(malymepponlynoPN, "wUniFrac")
+## Lyme PP, Babesiosis PP
+bray_malymebabpp_noPN <- phyloseq::distance(malymebabppnoPN, "bray")
+uuni_malymebabpp_noPN <- phyloseq::distance(malymebabppnoPN, "uUniFrac")
+wuni_malymebabpp_noPN <- phyloseq::distance(malymebabppnoPN, "wUniFrac")
+## Lyme PP, Anaplasmosis PP
+bray_malymeanapp_noPN <- phyloseq::distance(malymeanappnoPN, "bray")
+uuni_malymeanapp_noPN <- phyloseq::distance(malymeanappnoPN, "uUniFrac")
+wuni_malymeanapp_noPN <- phyloseq::distance(malymeanappnoPN, "wUniFrac")
+## Lyme PP, Babesiosis PP, Anaplasmosis PP
+bray_malymebabanapp_noPN <- phyloseq::distance(malymebabanappnoPN, "bray")
+uuni_malymebabanapp_noPN <- phyloseq::distance(malymebabanappnoPN, "uUniFrac")
+wuni_malymebabanapp_noPN <- phyloseq::distance(malymebabanappnoPN, "wUniFrac")
+
+
+# Lyme NN
+bray_malymenn <- phyloseq::distance(malymenn, "bray")
+uuni_malymenn <- phyloseq::distance(malymenn, "uUniFrac")
+wuni_malymenn <- phyloseq::distance(malymenn, "wUniFrac")
+## Lyme PP and NN ONLY
+bray_malymeppnnonly <- phyloseq::distance(malymeppnnonly, "bray")
+uuni_malymeppnnonly <- phyloseq::distance(malymeppnnonly, "uUniFrac")
+wuni_malymeppnnonly <- phyloseq::distance(malymeppnnonly, "wUniFrac")
+```
+
+### Babesiosis
+```{r}
+# Babesiosis PP noPN
+bray_mababppnoPN <- phyloseq::distance(mababppnoPN, "bray")
+uuni_mababppnoPN <- phyloseq::distance(mababppnoPN, "uUniFrac")
+wuni_mababppnoPN <- phyloseq::distance(mababppnoPN, "wUniFrac")
+## Babesiosis PP ONLY
+bray_mababpponlynoPN <- phyloseq::distance(mababpponlynoPN, "bray")
+uuni_mababpponlynoPN <- phyloseq::distance(mababpponlynoPN, "uUniFrac")
+wuni_mababpponlynoPN <- phyloseq::distance(mababpponlynoPN, "wUniFrac")
+
+# Babesiosis NN
+bray_mababnn <- phyloseq::distance(mababnn, "bray")
+uuni_mababnn <- phyloseq::distance(mababnn, "uUniFrac")
+wuni_mababnn <- phyloseq::distance(mababnn, "wUniFrac")
+## Babesiosis PP and NN ONLY
+bray_mababppnnonly <- phyloseq::distance(mababppnnonly, "bray")
+uuni_mababppnnonly <- phyloseq::distance(mababppnnonly, "uUniFrac")
+wuni_mababppnnonly <- phyloseq::distance(mababppnnonly, "wUniFrac")
+```
+
+### Anaplasmosis
+```{r}
+# Anaplasmosis PP noPN
+bray_maanappnoPN <- phyloseq::distance(maanappnoPN, "bray")
+uuni_maanappnoPN <- phyloseq::distance(maanappnoPN, "uUniFrac")
+## Anaplasmosis PP ONLY
+bray_maanapponlynoPN <- phyloseq::distance(maanapponlynoPN, "bray")
+uuni_maanapponlynoPN <- phyloseq::distance(maanapponlynoPN, "uUniFrac")
+
+# Anaplasmosis NN
+bray_maanann <- phyloseq::distance(maanann, "bray")
+uuni_maanann <- phyloseq::distance(maanann, "uUniFrac")
+## Anaplasmosis PP and NN ONLY
+bray_maanappnnonly <- phyloseq::distance(maanappnnonly, "bray")
+uuni_maanappnnonly <- phyloseq::distance(maanappnnonly, "uUniFrac")
+```
+
+# Set theme: Use ggplot theme to make everything more legible
+```{r}
+ggtheme <- theme(axis.title = element_text(colour="black",family = "Helvetica",
+                                           size = rel(1.5)), 
+                 axis.text = element_text(family = "Helvetica",colour = "black",
+                                          size = rel(1)), 
+                 axis.line = element_line(size = 0.5,colour = "black"), 
+                 axis.ticks = element_blank(),
+                 panel.grid.major = element_line(colour="grey",size = rel(0.25)), 
+                 panel.grid.minor = element_blank(), 
+                 panel.background = element_blank(),
+                 plot.title = element_text(colour = "black", face = "bold",
+                                           size = rel(2),family = "Helvetica",hjust = 0.5,
+                 geom_point(size = 20)))
+
+lyme_colors = c("#f49c98", "#fcd68f", "#629076")
+lyme_colors_noPN = c("#f49c98", "#fcd3d2")
+ana_colors_noPN = c("#8f6aa3","#d2c1db")
+bab_colors_noP0N = c("#629076","#cae8d7")
+sex_colors = c("#F78FB2","#3E8AC6")
+region_colors = c("#fcd68f",)
+```
+
+
+# SIGNIFICANCE TESTING
+
+## ALL
+### PERMANOVA
+```{r}
+# ALL
+df <- data.frame(sample_data(ma))
+distance_methods <-c("bray_ma")
+set.seed(129)
+# Run for loop in distance matrices         
+for (i in distance_methods){ 
+  form <- as.formula(paste(i, "sex+bb_lyme_noPN+bm_babesiosis_noPN+aph_anaplasmosis_noPN", sep="~"))
+  print(form)
+ adonis2(form, data=df)->result 
+ print(result)
+ capture.output(result, file = paste0("output/","ADONIS_bray_ma_noPN",date(),".txt"))
+}
+
+## UUNI
+### Make a data frame from the otu_data
+df <- data.frame(sample_data(ma))
+distance_methods <-c("uuni_ma")
+set.seed(129)
+# Run for loop in distance matrices         
+for (i in distance_methods){ 
+  form <- as.formula(paste(i, "sex+bb_lyme_noPN+bm_babesiosis_noPN+aph_anaplasmosis_noPN", sep="~"))
+  print(form)
+ adonis2(form, data=df)->result
+ print(result)
+ capture.output(result, file = paste0("output/","ADONIS_uuni_ma_noPN",date(),".txt"))
+} 
+
+
+## WUNI
+df <- data.frame(sample_data(ma))
+distance_methods <-c("wuni_ma")
+set.seed(129)
+# Run for loop in distance matrices         
+for (i in distance_methods){ 
+  form <- as.formula(paste(i, "sex+bb_lyme_noPN+bm_babesiosis_noPN+aph_anaplasmosis_noPN", sep="~"))
+  print(form)
+ adonis2(form, data=df)->result
+ print(result)
+ capture.output(result, file = paste0("output/","ADONIS_wuni_ma_noPN",date(),".txt"))
+}  
+```
+
+#### Posthoc
+```{r}
+df <- data.frame(sample_data(ma))
+
+# BRAY                 
+## Pariwise Permutation MANOVAs: lyme
+set.seed(129)
+permanova_pairwise(bray_all,df$site_sex,permutations = 1000)
+
+
+
+set.seed(129)
+permanova_pairwise(bray_ma,df$path_long_noPN,permutations = 1000)
+### No sig
+
+# UUNI
+## Pariwise Permutation MANOVAs: sex_site
+set.seed(129)
+permanova_pairwise(uuni_all,df$site_sex,permutations = 1000)
+
+
+## Pariwise Permutation MANOVAs: anaplasma
+set.seed(129)
+permanova_pairwise(uuni_ma,df$path_long_noPN,permutations = 1000)
+
+
+
+
+```
+
+### PERMDISP
+#### BRAY
+```{r}
+# Sex
+## make a data frame from the sample_data
+sampledf <- data.frame(sample_data(ma))
+## Make a data frame from the otu_data
+beta <- betadisper(bray_ma, sampledf$sex)
+result <- permutest(beta, pairwise = TRUE)
+print(result)
+capture.output(result, file = paste0("output/","BETADISP_bray_ma_sex",date(),".txt"))
+### 0.001
+
+
+# Lyme
+## make a data frame from the sample_data
+sampledf <- data.frame(sample_data(ma))
+## Make a data frame from the otu_data
+beta <- betadisper(bray_ma, sampledf$bb_lyme_noPN)
+result <- permutest(beta, pairwise = TRUE)
+print(result)
+capture.output(result, file = paste0("output/","BETADISP_bray_ma_bblyme_noPN",date(),".txt"))
+### No sig
+
+# Bab
+## make a data frame from the sample_data
+sampledf <- data.frame(sample_data(ma))
+## Make a data frame from the otu_data
+beta <- betadisper(bray_ma, sampledf$bm_babesiosis_noPN)
+result <- permutest(beta, pairwise = TRUE)
+print(result)
+capture.output(result, file = paste0("output/","BETADISP_bray_ma_bmbabesiosis_noPN",date(),".txt"))
+### 0.003
+
+# Ana
+## make a data frame from the sample_data
+sampledf <- data.frame(sample_data(ma))
+## Make a data frame from the otu_data
+beta <- betadisper(bray_ma, sampledf$aph_anaplasmosis_noPN)
+result <- permutest(beta, pairwise = TRUE)
+print(result)
+capture.output(result, file = paste0("output/,"BETADISP_bray_ma_aphanaplasmosis_noPN",date(),".txt"))
+### No sig
+
+```
+
+#### UUNI
+```{r}
+# Sex
+## make a data frame from the sample_data
+sampledf <- data.frame(sample_data(ma))
+## Make a data frame from the otu_data
+beta <- betadisper(uuni_ma, sampledf$sex)
+result <- permutest(beta, pairwise = TRUE)
+print(result)
+capture.output(result, file = paste0("output/betadisp_2023_05/",i,"BETADISP_uuni_ma_sex",date(),".txt"))
+## No sig
+
+# Lyme
+## noPN
+### make a data frame from the sample_data
+sampledf <- data.frame(sample_data(ma))
+## Make a data frame from the otu_data
+beta <- betadisper(uuni_ma, sampledf$bb_lyme_noPN)
+result <- permutest(beta, pairwise = TRUE)
+print(result)
+capture.output(result, file = paste0("output/betadisp_2023_05/",i,"BETADISP_uuni_ma_bblyme_noPN",date(),".txt"))
+## No sig
+
+# Bab
+## noPN
+### make a data frame from the sample_data
+sampledf <- data.frame(sample_data(ma))
+## Make a data frame from the otu_data
+beta <- betadisper(uuni_ma, sampledf$bm_babesiosis_noPN)
+result <- permutest(beta, pairwise = TRUE)
+print(result)
+capture.output(result, file = paste0("output/betadisp_2023_05/",i,"BETADISP_uuni_ma_bmbabesiosis_noPN",date(),".txt"))
+### Nosig
+
+
+# Ana
+## noPN
+### make a data frame from the sample_data
+sampledf <- data.frame(sample_data(ma))
+## Make a data frame from the otu_data
+beta <- betadisper(uuni_ma, sampledf$aph_anaplasmosis_noPN)
+result <- permutest(beta, pairwise = TRUE)
+print(result)
+capture.output(result, file = paste0("output/betadisp_2023_05/",i,"BETADISP_uuni_ma_aphanaplasmosis_noPN",date(),".txt"))
+### No sig
+
+```
+
+
+# LOGFOLD CHANGE USING DESEQ
+## FEMALE
+### LYME PP vs. NN ONLY, no co-infections
+```{r}
+
+
+# DESeq- requires absolute counts, not relative proportions
+deseqdata<-phyloseq_to_deseq2(maf_nocoinf, ~bb_lyme_noPN)
+gm_mean = function(x, na.rm=TRUE){exp(sum(log(x[x > 0]), na.rm=na.rm) / length(x))}
+geoMeans<-apply(counts(deseqdata),1,gm_mean)
+deseqdata<-estimateSizeFactors(deseqdata,geoMeans=geoMeans)
+deseqdata<-DESeq(deseqdata,fitType="local")
+res<-results(deseqdata,contrast=c("bb_lyme_noPN","PP","NN"))
+alpha<-0.05
+sigtab<-res[which(res$padj<alpha),]
+sigtab<-cbind(as(sigtab,"data.frame"),as(tax_table(maf_nocoinf)[rownames(sigtab),],"matrix"))
+head(sigtab)
+write.table(sigtab,"output/Logfold_SidDif_MAFnocoinfLyme_PPnum_noPN_2023_07_14.txt",sep="\t")
+
+
+# Plot
+## Plot Results
+theme_set(theme_bw())
+sigtabgen = subset(sigtab, !is.na(Family))
+# Order order
+x = tapply(sigtabgen$log2FoldChange, sigtabgen$Order, function(x) max(x))
+x = sort(x, TRUE)
+sigtabgen$Order = factor(as.character(sigtabgen$Order), levels=names(x))
+# Family order
+x = tapply(sigtabgen$log2FoldChange, sigtabgen$Family, function(x) max(x))
+x = sort(x, TRUE)
+sigtabgen$Family = factor(as.character(sigtabgen$Family), levels=names(x))
+log_lyme <- ggplot(sigtabgen, aes(y=Family, x=log2FoldChange, color=Order)) + 
+  geom_vline(xintercept = 0.0, color = "gray", size = 0.5) +
+  geom_point(size=6) + 
+  theme(axis.text.x = element_text(angle = -90, hjust = 0, vjust=0.5) +
+  theme(axis.title.x = element_text(size=14))+
+  theme(axis.title.y = element_text(size=14))+
+  theme(axis.text.x = element_text(size=12))+
+  theme(axis.text.y = element_text(size=12)))
+
+
+log_lyme
+
+pdf("output/Logfold_MAFnocoinfLymePP_numerator_noPN_2023_07_14_test.pdf", width=10,height=7)
+log_lyme
+dev.off()
+
+```
+
+
+
+
+### BAB PP vs. NN only, prune, no coinfections
+```{r}
+# DESeq- requires absolute counts, not relative proportions
+deseqdata<-phyloseq_to_deseq2(maf_bab_nocoinf_prune, ~bm_babesiosis_noPN)
+gm_mean = function(x, na.rm=TRUE){exp(sum(log(x[x > 0]), na.rm=na.rm) / length(x))}
+geoMeans<-apply(counts(deseqdata),1,gm_mean)
+deseqdata<-estimateSizeFactors(deseqdata,geoMeans=geoMeans)
+deseqdata<-DESeq(deseqdata,fitType="local")
+res<-results(deseqdata,contrast=c("bm_babesiosis_noPN","PP","NN"))
+alpha<-0.05
+sigtab<-res[which(res$padj<alpha),]
+sigtab<-cbind(as(sigtab,"data.frame"),as(tax_table(maf)[rownames(sigtab),],"matrix"))
+head(sigtab)
+write.table(sigtab,"output/Logfold_SidDif_MAFprunenocoinfBab_PPnum_noPN_2023_07_17.txt",sep="\t")
+
+
+# Plot
+## Plot Results
+theme_set(theme_bw())
+sigtabgen = subset(sigtab, !is.na(Family))
+# Order order
+x = tapply(sigtabgen$log2FoldChange, sigtabgen$Order, function(x) max(x))
+x = sort(x, TRUE)
+sigtabgen$Order = factor(as.character(sigtabgen$Order), levels=names(x))
+# Family order
+x = tapply(sigtabgen$log2FoldChange, sigtabgen$Family, function(x) max(x))
+x = sort(x, TRUE)
+sigtabgen$Family = factor(as.character(sigtabgen$Family), levels=names(x))
+log_bab <- ggplot(sigtabgen, aes(y=Family, x=log2FoldChange, color=Order)) + 
+  geom_vline(xintercept = 0.0, color = "gray", size = 0.5) +
+  geom_point(size=6) + 
+  theme(axis.text.x = element_text(angle = -90, hjust = 0, vjust=0.5) +
+  theme(axis.title.x = element_text(size=14))+
+  theme(axis.title.y = element_text(size=14))+
+  theme(axis.text.x = element_text(size=12))+
+  theme(axis.text.y = element_text(size=12)))
+
+
+log_bab
+
+pdf("output/Logfold_MAFprunenocoinfBabPP_numerator_noPN_2023_07_17.pdf")
+log_bab
+dev.off()
+
+```
+
+## Ana PP vs. NN only, prune, no coinfections
+```{r}
+# DESeq- requires absolute counts, not relative proportions
+deseqdata<-phyloseq_to_deseq2(maf_ana_nocoinf_prune, ~aph_anaplasmosis_noPN)
+gm_mean = function(x, na.rm=TRUE){exp(sum(log(x[x > 0]), na.rm=na.rm) / length(x))}
+geoMeans<-apply(counts(deseqdata),1,gm_mean)
+deseqdata<-estimateSizeFactors(deseqdata,geoMeans=geoMeans)
+deseqdata<-DESeq(deseqdata,fitType="local")
+res<-results(deseqdata,contrast=c("aph_anaplasmosis_noPN","PP","NN"))
+alpha<-0.05
+sigtab<-res[which(res$padj<alpha),]
+sigtab<-cbind(as(sigtab,"data.frame"),as(tax_table(ma)[rownames(sigtab),],"matrix"))
+head(sigtab)
+write.table(sigtab,"output/Logfold_SidDif_MAFprunenocoinfAna_PPnum_noPN_2023_07_17.txt",sep="\t")
+
+
+# Plot
+## Plot Results
+theme_set(theme_bw())
+sigtabgen = subset(sigtab, !is.na(Family))
+# Order order
+x = tapply(sigtabgen$log2FoldChange, sigtabgen$Order, function(x) max(x))
+x = sort(x, TRUE)
+sigtabgen$Order = factor(as.character(sigtabgen$Order), levels=names(x))
+# Family order
+x = tapply(sigtabgen$log2FoldChange, sigtabgen$Family, function(x) max(x))
+x = sort(x, TRUE)
+sigtabgen$Family = factor(as.character(sigtabgen$Family), levels=names(x))
+log_ana <- ggplot(sigtabgen, aes(y=Family, x=log2FoldChange, color=Order)) + 
+  geom_vline(xintercept = 0.0, color = "gray", size = 0.5) +
+  geom_point(size=6) + 
+  theme(axis.text.x = element_text(angle = -90, hjust = 0, vjust=0.5) +
+  theme(axis.title.x = element_text(size=14))+
+  theme(axis.title.y = element_text(size=14))+
+  theme(axis.text.x = element_text(size=12))+
+  theme(axis.text.y = element_text(size=12)))
+
+
+log_ana
+
+pdf("output/Logfold_MAFprunenocoinfAnaPP_numerator_noPN_2023_07_17.pdf")
+log_ana
+dev.off()
+
+```
+
+
+# Creating co-occurrence networks
+## Visualizing in Cytoscape
+### MAF Lyme-negative
+```{r}
+#maf_prune_genglom <- tax_glom(maf_prune, taxrank = "Genus")
+maf_genglom_nn <- subset_samples(maf_prune_genglom, path_long_noPN == "NN")
+maf_prune_genglom_nn <- prune_taxa(taxa_sums(maf_genglom_nn) > 1, maf_genglom_nn)
+write.csv(otu_table(maf_prune_genglom_nn), file = "maf_prune_genglom_nn_asvtab_20230808.csv")
+write.csv(tax_table(maf_prune_genglom_nn), file = "maf_prune_genglom_nn_taxtab_20230808.csv")
+otu.mafnn.tab <- read.csv(file = "maf_prune_genglom_nn_asvtab_20230808.csv", header=T, row.names = 1)
+tax.mafnn.tab <- read.csv(file = "maf_prune_genglom_nn_taxtab_20230808.csv", header = T, row.names = 1)
+
+otu.mafnn.tab.t <- transpose(otu.mafnn.tab)
+rownames(otu.mafnn.tab.t) <- colnames(otu.mafnn.tab)
+colnames(otu.mafnn.tab.t) <- tax.mafnn.tab$Genus
+tax.mafnn.tab.test <- tax.mafnn.tab
+rownames(tax.mafnn.tab.test) <- tax.mafnn.tab$Genus
+
+# Calculating the “Spearman” correlation coefficient between OTUs using the function rcorr(). A list will be created from, with three elements, r for correlations, n for the number of observations and P for the p-values. [If you are curious type ?rcorr() to explore the coefficient options].
+otu.mafnn.cor <- rcorr(as.matrix(otu.mafnn.tab.t), type = "pearson")
+otu.mafnn.cor2 <- otu.mafnn.cor
+#diag(otu.cor2$r) <- 0
+# To obtain the p-value information from the list, use otu.cor$P, using the function forceSymmetric() to assign self-correlation as NA.
+#otu.pval <- forceSymmetric(otu.cor$P)
+
+# Select only the taxa for the filtered OTUs by using rownames of otu.pval
+#sel.tax <- tax.tab.test[rownames(otu.pval),,drop = FALSE]
+# Sanity check
+#all.equal(rownames(sel.tax), rownames(otu.pval))
+
+# Filter the association based on p-values and level of correlations
+#p.yes <- otu.pval<0.05
+
+# Select the r values for the filter probality of < 0.5.
+#r.val = otu.cor$r # select all the correlation values 
+#p.yes.r <- r.val*p.yes # only select correlation values based on p-value criterion 
+
+# Select OTUs by level of correlation
+r_otucor.mafnn <- otu.mafnn.cor2$r
+r75.mafnn <- abs(r_otucor.mafnn)>0.75 # output is logical vector
+p.yes.rr.mafnn <- r_otucor.mafnn*r75.mafnn # use logical vector for subscripting.
+
+# Select only the taxa for the filtered OTUs by using rownames of otu.pval
+sel.mafnn.tax <- tax.mafnn.tab.test[rownames(p.yes.rr.mafnn),,drop = FALSE]
+# Sanity check
+all.equal(rownames(sel.mafnn.tax), rownames(p.yes.rr.mafnn))
+
+#Create an adjacency matrix
+adjm.mafnn <- as.matrix(p.yes.rr.mafnn)
+
+# Add taxonomic information from the metadata associated with adjacency matrix
+sel.mafnn.tax2 <- sel.mafnn.tax
+sel.mafnn.tax2$ASV <- rownames(sel.mafnn.tax)
+colnames(adjm.mafnn) <- as.vector(sel.mafnn.tax2$Genus)
+rownames(adjm.mafnn) <- as.vector(sel.mafnn.tax2$Genus)
+
+# iGraph can create graph objects from different sources like data.frame, edge.list, or from adjacency.matrix.
+# The function graph.adjacency creates a graph object from adjacency matrix. Weight here represents the level of correlation.
+net.grph=graph.adjacency(adjm.mafnn,mode="undirected",weighted=TRUE,diag=FALSE)
+
+#Obtaining edge weight based on the Spearman correlation
+edgew<-E(net.grph)$weight
+
+# Creating a vector to remove the isolated nodes (nodes with no interactions)
+bad.vs<-V(net.grph)[degree(net.grph) == 0] 
+
+# Removing the isolated nodes from the graph object using the function delete.vertices()
+net.grph <-delete.vertices(net.grph, bad.vs)
+
+# Simplfy the adjacency object
+g <- simplify(net.grph, remove.multiple=TRUE, remove.loops=TRUE)
+
+# Colour negative correlation edges as blue
+E(g)[which(E(g)$weight<0)]$color <- "darkred"
+
+# Colour positive correlation edges as red
+E(g)[which(E(g)$weight>0)]$color <- "darkgreen"
+
+# Convert edge weights to absolute values
+E(g)$weight <- abs(E(g)$weight)
+
+# Remove edges below absolute Pearson correlation 0.8
+g <- delete_edges(g, E(g)[which(E(g)$weight<0.8)])
+
+# Remove any vertices remaining that have no edges
+g <- delete.vertices(g, degree(g)==0)
+
+g2 <- g
+E(g2)$r <- otu.mafnn.cor2$r 
+plotCytoscapeGML(g, file = "maf_specglom_igraph_to_cytoscape_g.gml")
+
+plot.igraph(g, vertex.size=20, edge.width=abs(E(g)$weight)*8, 
+        edge.color=ifelse(otu.mafnn.cor2$r > 0, "blue","red"))
+
+plot(net.grph,
+    vertex.size=8,
+    vertex.frame.color="black",
+    edge.curved=F,
+    edge.width=1.5,
+    layout=layout.fruchterman.reingold,
+    edge.color=ifelse(edgew < 0,"red","blue"),
+    vertex.label=NA,
+    vertex.label.color="black",
+    vertex.label.family="Times New Roman",
+    vertex.label.font=2)
+
+net.grph$edgew
+edgew
+
+library(RCy3)
+createNetworkFromIgraph(net.grph, title = "maf_igraph_pearson", collection = "My first iGraph")
+
+library(NetPathMiner)
+plotCytoscapeGML(net.grph, file = "mafnn_genglom_igraph_to_cytoscape_20230808.gml")
+```
+
+## MAF Lyme-positive
+```{r}
+#maf_prune_genglom <- tax_glom(maf_prune, taxrank = "Genus")
+maf_genglom_lyme <- subset_samples(maf_prune_genglom, path_long_noPN == "lyme")
+maf_prune_genglom_lyme <- prune_taxa(taxa_sums(maf_genglom_lyme) > 1, maf_genglom_lyme)
+maf_prune_genglom_lyme_rel  = transform_sample_counts(maf_prune_genglom_lyme, function(x) x / sum(x) )
+write.csv(otu_table(maf_prune_genglom_lyme_rel), file = "maf_prune_rel_genglom_lyme_asvtab_20230808.csv")
+write.csv(tax_table(maf_prune_genglom_lyme_rel), file = "maf_prune_rel_genglom_lyme_taxtab_20230808.csv")
+otu.maflyme.tab <- read.csv(file = "maf_prune_rel_genglom_lyme_asvtab_20230808.csv", header=T, row.names = 1)
+tax.maflyme.tab <- read.csv(file = "maf_prune_rel_genglom_lyme_taxtab_20230808.csv", header = T, row.names = 1)
+
+otu.maflyme.tab.gen <- otu.maflyme.tab
+otu.maflyme.tab.gen$genus <- tax.maflyme.tab$Genus
+
+sp_ratio.maflyme <- otu.maflyme.tab.gen %>% 
+  as_tibble() %>%
+  rename_all(tolower) %>%
+  column_to_rownames(var = "genus")
+
+min.prevalence=10
+incidence=sp_ratio.maflyme
+incidence[incidence>0]=1
+sp_ratio_filtered.maflyme <- sp_ratio.maflyme[which(rowSums(incidence)>=min.prevalence),] ### end of prevalence filtering
+
+sp_correl.maflyme <- sp_ratio_filtered.maflyme %>% 
+  t() %>% 
+  cor(method = "pearson")  ### correlation calculations
+
+sp_correl.maflyme[abs(sp_correl.maflyme)<0.7]=0  ### define threshold for correlations
+
+net_work.maflyme <- graph_from_adjacency_matrix(sp_correl.maflyme,mode="undirected",weighted=TRUE, diag=FALSE)  ## create network file
+net_work.maflyme <- delete.vertices(net_work.maflyme,degree(net_work.maflyme)==0) #remove nodes without edges
+
+plot(net_work.maflyme, vertex.label = NA, edge.width = 5, vertex.size = 10) ## first plot 
+
+plotCytoscapeGML(net_work.maflyme, file = "maflyme_genglom_igraph_to_cytoscape_attributes0.gml")
+
+# Now we will enhance the network appearance by adding attributes to the nodes and edges. It will also make the plot much more readable and will help us during interpretations. Each major steps of the code will be explained.
+
+taxa_tbl.maflyme <- tax.maflyme.tab %>% 
+  as_tibble() %>% 
+  rename_all(tolower) #tidy taxonomic infos
+
+net_work_used.maflyme <- V(net_work.maflyme)$name %>% 
+   as_tibble() %>% 
+  mutate(genus = value) %>% 
+  select(genus) #extract genera represented in the network
+
+v_attr.maflyme <- sp_ratio.maflyme %>% ### we create a table of attributes for nodes (vertex)
+  rownames_to_column( var = "genus") %>% 
+  as_tibble() %>% 
+  pivot_longer(-genus, names_to = "sample_id", values_to = "ratio" ) %>%
+  group_by(genus) %>%
+  dplyr::summarise(rel_abun = sum(ratio)) %>% 
+  inner_join(net_work_used.maflyme, by = "genus") %>%
+  inner_join(taxa_tbl.maflyme, by = "genus") %>%
+  mutate(rel_abun = abs(exp (rel_abun)))
+
+network_table.maflyme <- igraph::as_data_frame(net_work.maflyme, 'both') ##we convert the network in data frames
+     
+network_table.maflyme$vertices <- network_table.maflyme$vertices %>%
+    as_tibble() %>% 
+    inner_join(v_attr.maflyme, by = c("name"="genus"))  # we add our attribute in the data frames 
+  
+  net_work1.maflyme <- graph_from_data_frame(network_table.maflyme$edges,
+                                     directed = F,
+                                     vertices = network_table.maflyme$vertices) # we convert back data frames to a network
+plotCytoscapeGML(net_work1.maflyme, file = "maflyme_genglom_igraph_to_cytoscape_attributes0.5.gml")
+
+
+mom_data.maflyme <- V(net_work1.maflyme)$family %>% 
+  as_tibble_col(column_name = "genus") #formating the class variable as factor (is needed for coloring edges)
+mom_data.maflyme$genus <- as_factor(mom_data.maflyme$genus)
+
+color_easy <-  c("pink", "brown", "orange", "dodgerblue", "lightgray")[mom_data.maflyme$species] #creating a color palette to represent each class levels
+
+V(net_work1.maflyme)$color <-  color_easy ## we have now the color attributes based on class
+
+E(net_work1.maflyme)$sign <- E(net_work1.maflyme)$weight ##we create another attribute from the weight
+
+E(net_work1.maflyme)$weight <- abs(E(net_work1.maflyme)$weight) ## we then use absolute value of weight because of the specific layout we will use
+
+library(NetPathMiner)
+plotCytoscapeGML(net_work1.maflyme, file = "maflyme_genglom_igraph_to_cytoscape_attributes1.gml")
+```
+
+
+
+

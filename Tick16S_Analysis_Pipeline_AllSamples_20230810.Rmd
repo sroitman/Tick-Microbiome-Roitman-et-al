@@ -1,0 +1,508 @@
+---
+title: "Tick16S_Analysis_Pipeline_AllSamples_20230810"
+author: "Sofia Roitman"
+date: "2023-08-10"
+output: html_document
+---
+
+# Set working directory
+```{r}
+setwd("path/to/working/directory")
+```
+
+
+# Load dependencies
+```{r message=FALSE, error=FALSE}
+# libraries and functions
+library(tidyverse)
+library(RVAideMemoire)
+library(vegan)
+library(BiocManager)
+library(phyloseq) 
+library(rhdf5)
+library(biomformat)
+library(microbiome)
+library(dplyr) 
+library(gcookbook)
+library(tidyverse)
+library(ape)
+library(Biostrings) 
+library(Hmisc) 
+library(yaml) 
+library(tidyr) 
+library(stats) 
+library(utils) 
+library(qiime2R)
+library(genefilter)
+library(magrittr)
+library(DESeq2)
+library(plyr)
+library(data.table)
+library(phytools)
+library(stringi)
+library(ggpubr)
+library(vegan)
+library(microbiomeSeq)
+library(microbiomeutilities)
+library(ampvis2)
+library(pairwiseAdonis)
+library(ecole)
+library(paletteer)
+library(mirlyn)
+library(ggtree)
+library(ggplot2)
+library(scales)
+library(microbiomeViz)
+library(miaViz)
+library(scater)
+library(mia)
+library(mina)
+library(NetCoMi)
+library(devtools)
+library(microeco)
+library(file2meco)
+library(ggh4x)
+
+```
+
+# Importing QIIME2 results using qiime2R
+## Following: https://forum.qiime2.org/t/tutorial-integrating-qiime2-and-r-for-data-visualization-and-analysis-using-qiime2r/4121
+### Creating a Phyloseq object
+```{r}
+# Import deblur feature table, rooted tree, and metadata file into a phyloseq object
+physeq_deblur<-qza_to_phyloseq(
+    features="input/_deblur-table.qza",
+    tree="input/_deblur-rooted-tree.qza",
+    metadata ="input/metadata.txt"
+    )
+physeq_deblur
+## Summarize
+summarize_phyloseq(physeq_deblur)
+
+# Import taxonomy table into the phyloseq object
+tax_deblur_kraken2 <- as.matrix(read.table("input/_kraken2_taxonomy.txt", sep="\t", header=T, row.names=1))
+obs_new_deblur_kraken2 <- tax_table(tax_deblur_kraken2)
+otus_merged_deblur_kraken2 <- merge_phyloseq(physeq_deblur,obs_new_deblur_kraken2)
+## Summarize
+summarize_phyloseq(otus_merged_deblur_kraken2)
+
+```
+
+# Clean data
+```{r}
+# Remove features that have only been classigied at the kingdom level
+physeq_deblurK_clean <- subset_taxa(otus_merged_deblur_kraken2, Phylum != "NA")
+summarize_phyloseq(physeq_deblurK_clean)
+
+# Remove eukrayotes and archaea
+physeq_deblurK_noeukarch = subset_taxa(physeq_deblurK_clean,
+                                              Kingdom   != "Eukaryota",
+                                              Kingdom   != "Archaea" )
+
+summarize_phyloseq(physeq_deblurK_noeukarch)
+
+# There are samples for which there are no observed OTUs. Let's remove those.
+physeq_deblurK_nosamp50 = prune_samples(sample_sums(physeq_deblurK_noeukarch)>=50, physeq_deblurK_noeukarch)
+
+# There are ASVs that appear only once in the data. Let's remove those as well.
+physeq_deblurK_no0 = prune_taxa(taxa_sums(physeq_deblurK_nosamp50)>1, physeq_deblurK_nosamp50)
+
+
+
+```
+
+# Replace NAs in tax table
+```{r}
+taxdeK <- data.frame(tax_table(physeq_deblurK_no0))
+taxdeK.clean <- data.frame(row.names = row.names(taxdeK), 
+                        Kingdom = taxdeK[,1],
+                        Phylum = taxdeK[,2],
+                        Class = taxdeK[,3],
+                        Order = taxdeK[,4],
+                        Family = taxdeK[,5],
+                        Genus = taxdeK[,6],
+                        Species = taxdeK[,7],
+                        stringsAsFactors = FALSE)
+taxdeK.clean[is.na(taxdeK.clean)] <- ""
+
+for (i in 1:7){ taxdeK.clean[,i] <- as.character(taxdeK.clean[,i])}
+####### Fill holes in the tax table
+taxdeK.clean[is.na(taxdeK.clean)] <- ""
+for (i in 1:nrow(taxdeK.clean)){
+  if (taxdeK.clean[i,2] == ""){
+    kingdom <- paste("Kingdom_", taxdeK.clean[i,1], sep = "")
+    taxdeK.clean[i, 2:7] <- kingdom
+    } else if (taxdeK.clean[i,3] == ""){
+      phylum <- paste("Phylum_", taxdeK.clean[i,2], sep = "")
+      taxdeK.clean[i, 3:7] <- phylum
+      } else if (taxdeK.clean[i,4] == ""){
+        class <- paste("Class_", taxdeK.clean[i,3], sep = "")
+        taxdeK.clean[i, 4:7] <- class
+        } else if (taxdeK.clean[i,5] == ""){
+          order <- paste("Order_", taxdeK.clean[i,4], sep = "")
+          taxdeK.clean[i, 5:7] <- order
+          } else if (taxdeK.clean[i,6] == ""){
+            family <- paste("Family_", taxdeK.clean[i,5], sep = "")
+            taxdeK.clean[i, 6:7] <- family
+            } else if (taxdeK.clean[i,7] == ""){
+              taxdeK.clean$Species[i] <- paste("Genus",taxdeK.clean$Genus[i], sep = "_")
+            }
+}
+
+# Replace old taxonomy table with edited version
+physeq_debKno0_taxfix <- physeq_deblurK_no0
+tax_table(physeq_debKno0_taxfix) <- as.matrix(taxdeK.clean)
+summarize_phyloseq(physeq_debKno0_taxfix)
+
+saveRDS(physeq_debkno0_taxfix, "physeq_debkno0_taxfix.rds")
+
+```
+
+# SUBSETTING
+## Create object with no Rickettsia
+```{r}
+no_rick = subset_taxa(physeq_debKno0_taxfix, Genus!="Rickettsia")
+no_rick_prune = prune_taxa(taxa_sums(no_rick)>1, no_rick)
+
+```
+
+# DISTANCE MATRICES
+## Bray Curtis, Unweighted UniFrac, Weighted UniFrac
+```{r}
+# All
+bray_all <- phyloseq::distance(physeq_debKno0_taxfix, "bray")
+uuni_all <- phyloseq::distance(physeq_debKno0_taxfix, "uUniFrac")
+wuni_all <- phyloseq::distance(physeq_debKno0_taxfix, "wUniFrac")
+```
+
+
+# SIGNIFICANCE TESTING
+
+## ALL
+### PERMANOVA
+```{r}
+# ALL
+## Bray
+### Make a data frame from the otu_data
+df <- data.frame(sample_data(physeq_debKno0_taxfix))
+distance_methods <-c("bray_all")
+set.seed(129)
+# Run for loop in distance matrices         
+for (i in distance_methods){ 
+  form <- as.formula(paste(i, "site_sex+bb_lyme_noPN+bm_babesiosis_noPN+aph_anaplasmosis_noPN", sep="~"))
+  print(form)
+ adonis2(form, data=df)->result 
+ print(result)
+ capture.output(result, file = paste0("output/","ADONIS_bray_all",date(),".txt"))
+} 
+
+
+## UUNI
+### Make a data frame from the otu_data
+df <- data.frame(sample_data(physeq_debKno0_taxfix))
+distance_methods <-c("uuni_all")
+set.seed(129)
+# Run for loop in distance matrices         
+for (i in distance_methods){ 
+  form <- as.formula(paste(i, "site_sex+bb_lyme_noPN+bm_babesiosis_noPN+aph_anaplasmosis_noPN", sep="~"))
+  print(form)
+ adonis2(form, data=df)->result
+ print(result)
+ capture.output(result, file = paste0("output/","ADONIS_uuni_all",date(),".txt"))
+} 
+
+
+## WUNI
+### Make a data frame from the otu_data
+df <- data.frame(sample_data(physeq_debKno0_taxfix))
+distance_methods <-c("wuni_all")
+set.seed(129)
+# Run for loop in distance matrices         
+for (i in distance_methods){ 
+  form <- as.formula(paste(i, "site_sex+bb_lyme_noPN+bm_babesiosis_noPN+aph_anaplasmosis_noPN", sep="~"))
+  print(form)
+ adonis2(form, data=df)->result
+ print(result)
+ capture.output(result, file = paste0("output/","ADONIS_wuni_all",date(),".txt"))
+} 
+```
+
+#### Posthoc
+```{r}
+df <- data.frame(sample_data(physeq_debKno0_taxfix))
+
+# BRAY                 
+## Pariwise Permutation MANOVAs: lyme
+set.seed(129)
+permanova_pairwise(bray_all,df$site_sex,permutations = 1000)
+
+# UUNI
+## Pariwise Permutation MANOVAs: sex_site
+set.seed(129)
+permanova_pairwise(uuni_all,df$site_sex,permutations = 1000)
+
+# WUNI
+## Pariwise Permutation MANOVAs: sex_site
+set.seed(129)
+permanova_pairwise(uuni_all,df$site_sex,permutations = 1000)
+
+```
+
+### PERMDISP
+#### BRAY
+```{r}
+# Site sex
+## make a data frame from the sample_data
+sampledf <- data.frame(sample_data(physeq_debKno0_taxfix))
+## Make a data frame from the otu_data
+beta <- betadisper(bray_all, sampledf$site_sex)
+result <- permutest(beta, pairwise = TRUE)
+print(result)
+capture.output(result, file = paste0("output/",i,"BETADISP_bray_all_site_sex",date(),".txt"))
+### 0.001
+
+```
+
+#### UUNI
+```{r}
+# Site sex
+## make a data frame from the sample_data
+sampledf <- data.frame(sample_data(physeq_debKno0_taxfix))
+## Make a data frame from the otu_data
+beta <- betadisper(uuni_all, sampledf$site_sex)
+result <- permutest(beta, pairwise = TRUE)
+print(result)
+capture.output(result, file = paste0("output/",i,"BETADISP_uuni_all_sitesex",date(),".txt"))
+## 0.001
+
+```
+
+# Set theme: Use ggplot theme to make everything more legible
+```{r}
+ggtheme <- theme(axis.title = element_text(colour="black",family = "Helvetica",
+                                           size = rel(1.5)), 
+                 axis.text = element_text(family = "Helvetica",colour = "black",
+                                          size = rel(1)), 
+                 axis.line = element_line(size = 0.5,colour = "black"), 
+                 axis.ticks = element_blank(),
+                 panel.grid.major = element_line(colour="grey",size = rel(0.25)), 
+                 panel.grid.minor = element_blank(), 
+                 panel.background = element_blank(),
+                 plot.title = element_text(colour = "black", face = "bold",
+                                           size = rel(2),family = "Helvetica",hjust = 0.5,
+                 geom_point(size = 20)))
+
+sex_site_colors = c("#E6A0C4","#C6CDF7","#D8A499","#7394D4") 
+
+```
+
+# PCoAs
+
+## All samples
+### Sex site
+```{r}
+## BRAY
+### Calculate the PCoA on this distance matrix
+rt.pcoa = ordinate(physeq_debKno0_taxfix, method="PCoA", distance=bray_all)
+plot_scree(rt.pcoa, "Screen plot")
+## PCoA ordination
+## Define shapes
+pcoa<-0
+pcoa <- plot_ordination(physeq_debKno0_taxfix, rt.pcoa, "samples", color="site_sex") + stat_ellipse(level = 0.90,type = "t",aes(group=site_sex)) + ggtheme + geom_point(size = 2) + scale_color_manual(values = sex_site_colors)
+pcoa
+pdf("output/PCoA_bray_all_sitesex.pdf",width=9,height=5)
+pcoa
+dev.off()
+
+# UUNI
+##Calculate the PCoA on this distance matrix
+rt.pcoa = ordinate(physeq_debKno0_taxfix, method="PCoA", distance=uuni_all)
+plot_scree(rt.pcoa, "Screen plot")
+## PCoA ordination
+## Define shapes
+pcoa<-0
+pcoa <- plot_ordination(physeq_debKno0_taxfix, rt.pcoa, "samples", color="site_sex") + stat_ellipse(level = 0.90,type = "t",aes(group=site_sex)) + ggtheme + geom_point(size = 2) + scale_color_manual(values = sex_site_colors)
+pcoa
+pdf("output/PCoA_uuni_all_sitesex.pdf",width=9,height=5)
+pcoa
+dev.off()
+
+# WUNI
+##Calculate the PCoA on this distance matrix
+rt.pcoa = ordinate(physeq_debKno0_taxfix, method="PCoA", distance=wuni_all)
+plot_scree(rt.pcoa, "Screen plot")
+## PCoA ordination
+## Define shapes
+pcoa<-0
+pcoa <- plot_ordination(physeq_debKno0_taxfix, rt.pcoa, "samples", color="site_sex") + stat_ellipse(level = 0.90,type = "t",aes(group=site_sex)) + ggtheme + geom_point(size = 2) + scale_color_manual(values = sex_site_colors)
+pcoa
+pdf("output/PCoA_wuni_all_sitesex.pdf",width=9,height=5)
+pcoa
+dev.off()
+```
+
+# BAR PLOTS
+
+## All samples
+### Convert to correct file format
+```{r}
+meco_all_dataset <- phyloseq2meco(physeq_debKno0_taxfix)
+
+```
+
+### Plot bar
+```{r}
+# create trans_abund object
+# select top 15 abundant Phyla.
+t1 <- trans_abund$new(dataset = meco_all_dataset, taxrank = "Family", ntaxa = 15)
+# t1 object now include the transformed abundance data t1$abund_data and other elements for the following plotting
+
+# return a ggplot2 object
+t1$plot_bar(others_color = "grey70", facet = "sex", xtext_keep = FALSE, legend_text_italic = FALSE)
+
+# Two or more facets are supported with the facet parameter from v0.14.0 by providing a vector with multiple elements.
+# require package ggh4x, first run install.packages("ggh4x") if not installed
+p <- t1$plot_bar(others_color = "grey70", facet = c("sex", "collection_method"), xtext_keep = FALSE, legend_text_italic = FALSE, barwidth = 1)
+pdf("output/bar_microeco_all_sexsite_fam_16.pdf",width=9,height=5)
+p
+dev.off()
+
+
+###################
+# No rick
+meco_norick_dataset <- phyloseq2meco(no_rick_prune)
+
+# create trans_abund object
+# select top 15 abundant Phyla.
+t1 <- trans_abund$new(dataset = meco_norick_dataset, taxrank = "Family", ntaxa = 15)
+# t1 object now include the transformed abundance data t1$abund_data and other elements for the following plotting
+
+# return a ggplot2 object
+t1$plot_bar(others_color = "grey70", facet = "sex", xtext_keep = FALSE, legend_text_italic = FALSE)
+
+# Two or more facets are supported with the facet parameter from v0.14.0 by providing a vector with multiple elements.
+# require package ggh4x, first run install.packages("ggh4x") if not installed
+p <- t1$plot_bar(others_color = "grey70", facet = c("sex", "collection_method"), xtext_keep = FALSE, legend_text_italic = FALSE, barwidth = 1)
+pdf("output/bar_microeco_norick_sexsite_fam_16.pdf",width=9,height=5)
+p
+dev.off()
+```
+
+
+# ALPHA DIVERSITY
+## Sex_site
+```{r}
+adiv_sitesex <- data.frame(
+  "Observed" = phyloseq::estimate_richness(physeq_debKno0_taxfix, measures = "Observed"),
+  "Shannon" = phyloseq::estimate_richness(physeq_debKno0_taxfix, measures = "Shannon"),
+  "site_sex" = phyloseq::sample_data(physeq_debKno0_taxfix)$site_sex)
+head(adiv)
+sitesex_comp <- list( c("MA_F", "MA_M"), c("MA_F", "NH_F"), c("MA_F", "NH_M"), c("MA_M", "NH_F"), c("MA_M", "NH_M"), c("NH_F", "NH_M") )
+symnum.args = list(cutpoints = c(0, 0.0001, 0.001, 0.01, 0.05, 1), symbols = c("****", "***", "**", "*", "ns"))
+
+hist(richness$Shannon, main="Shannon index", xlab="")
+#kruskal.test(richness$Shannon ~ sample_data(physeq)$Group)
+
+#Plot adiv measures
+all_sitesex_adiv <- adiv_sitesex %>%
+  gather(key = metric, value = value, c("Observed", "Shannon")) %>%
+  mutate(metric = factor(metric, levels = c("Observed", "Shannon"))) %>%
+  ggplot(aes(x = site_sex, y = value)) +
+  geom_boxplot(outlier.color = NA) +
+  geom_jitter(aes(color = site_sex), height = 0, width = .2) +
+  labs(x = "", y = "") +
+  facet_wrap(~ metric, scales = "free") +
+  theme(legend.position="none")+
+  stat_compare_means(test = "kruskal.test", comparisons = sitesex_comp, label = "p.signif", symnum.args = symnum.args) +
+  scale_color_manual(values = sex_site_colors)
+
+pdf("output/adiv_2023_05/all_sitesex_kruskal.pdf",width=9,height=5)
+all_sitesex_adiv
+dev.off()
+
+
+```
+
+
+# SAMPLE DENDROGRAM
+
+# Generate dendrogram for importing into Evolview
+```{r}
+# uuni_all
+hClusteringuuni <- hclust(uuni_all, method = 'complete')
+plot(hClusteringuuni, hang = -1)
+
+#bray_all
+hClusteringbray <- hclust(bray_all, method = 'complete')
+plot(hClusteringbray, hang = -1)
+
+library(ape)
+class(hClusteringuuni) # must be hclust class
+my_dend <- as.phylo(hClusteringuuni) 
+write.tree(phy=my_dend, file="all_uuni_dend.newick")
+
+library(ape)
+class(hClusteringbray) # must be hclust class
+my_dend_bray <- as.phylo(hClusteringbray) 
+write.tree(phy=my_dend_bray, file="all_bray_dend.newick")
+
+
+```
+
+# CORE MICROBIOME
+## Site sex genus
+```{r}
+# simple way to count number of samples in each group
+table(meta(gen_glom)$site_sex, useNA = "always")
+
+# convert to relative abundances
+pseq.rel <- microbiome::transform(gen_glom, "compositional")
+
+# make list of lyme infection stat
+sitesex_states <- unique(as.character(meta(pseq.rel)$site_sex))
+print(sitesex_states)
+
+taxa_names(pseq.rel)[1:5]
+# format names
+pseq.rel.site <- format_to_besthit(pseq.rel)
+# check names
+taxa_names(pseq.rel.site)[1:5]
+
+list_core <- c() # an empty object to store information
+
+for (n in sitesex_states){ # for each variable n in DiseaseState
+    #print(paste0("Identifying Core Taxa for ", n))
+    
+    ps.sub <- subset_samples(pseq.rel.site, site_sex == n) # Choose sample from DiseaseState by n
+    
+    core_m <- core_members(ps.sub, # ps.sub is phyloseq selected with only samples from g 
+                           detection = 0.001, # 0.001 in atleast 90% samples 
+                           prevalence = 0.90)
+    print(paste0("No. of core taxa in ", n, " : ", length(core_m))) # print core taxa identified in each DiseaseState.
+    list_core[[n]] <- core_m # add to a list core taxa for each group.
+    #print(list_core)
+}
+
+print(list_core)
+#define file name
+sink('output/core_allsitesex_genglom.txt')
+#print my_list to file
+print(list_core)
+#close external connection to file 
+sink()
+
+# Specify colors and plot venn
+# supplying colors in the order they appear in list_core
+mycols <- c("#E6A0C4","#7394D4","#C6CDF7","#D8A499") 
+plot(eulerr::venn(list_core),
+     fills = mycols)
+allsitesex_core <- plot(eulerr::venn(list_core),
+     fills = mycols)
+pdf("output/Core_allsitesex_genglom_2023_05_25.pdf")
+allsitesex_core
+dev.off()
+
+
+
+
+
