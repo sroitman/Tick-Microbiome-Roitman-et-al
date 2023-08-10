@@ -113,6 +113,7 @@ Examples of figures generated using code from the RMarkdown files, along with Ev
 ![MASamples_DESeq2](https://github.com/sroitman/Tick-Microbiome-Roitman-et-al/assets/35745864/7eba6763-1adf-4876-bf6f-59c86c1b925b)
 
 
+![MASamples_Cytoscape_CoOccurrenceNetwork](https://github.com/sroitman/Tick-Microbiome-Roitman-et-al/assets/35745864/5fd18a4b-6bbe-4f5e-99d1-b9e30a4c77c8)
 
 
 
